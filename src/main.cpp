@@ -43,13 +43,18 @@ void notFound(AsyncWebServerRequest* request) {
   request->send(404, "text/plain", "Not found");
 }
 
-void handlePost(AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total) {
+void handlePost(AsyncWebServerRequest* request, uint8_t* data, size_t len, size_t index, size_t total) {
   PRINT("Starting heap: ");
   HEAP();
 
   Serial.println("received call to /api/v1/push");
+  Serial.print("len: ");
+  Serial.println(len);
 
-  
+  // TODO when data was too big we crashed the stack for the task
+  if (len > 70) {
+    return;
+  }
 
 
   // if (webServer.hasArg("plain") == false) {
