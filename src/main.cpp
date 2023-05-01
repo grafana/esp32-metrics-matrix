@@ -25,17 +25,8 @@
 
 // #define DATA_PIN 4
 #define RGB_BUILTIN 5
-// WebServer webServer(80);
 AsyncWebServer server(80);
 
-// void handleRoot() {
-//   Serial.println("received request to /");
-//   webServer.send(200, "text/plain", "connected!!");
-// }
-
-// void handleNotFound() {
-//   webServer.send(404, "text/plain", "Not found");
-// }
 
 WriteRequest writeRequest(1, 2048);
 
@@ -87,60 +78,6 @@ void handlePost(AsyncWebServerRequest* request, uint8_t* data, size_t len, size_
   // Copy the data into the buffer
   memcpy(buffer, data, len);
   xSemaphoreGive(bufferMtx);
-
-
-
-  // if (webServer.hasArg("plain") == false) {
-  //   Serial.println("no arg plain");
-  //   return;
-  // }
-
-  // String body = webServer.arg("plain");
-  // const char* bcstr = body.c_str();
-  // // Serial.println(strlen(bcstr));
-  // Serial.println();
-  // for (int i = 0; i < strlen(bcstr); i++) {
-  //   Serial.print(bcstr[i], HEX);
-  //   Serial.print(" ");
-  // }
-  // Serial.println();
-
-
-
-
-
-
-
-
-
-
-
-
-
-  // deserializeJson(jsonDocument, body);
-
-  // int x_pos = jsonDocument["xPos"];
-  // int y_pos = jsonDocument["yPos"];
-  // int addr = jsonDocument["addr"];
-  // int colorAddr = jsonDocument["colorAddr"];
-  // int red_value = jsonDocument["red"];
-  // int green_value = jsonDocument["green"];
-  // int blue_value = jsonDocument["blue"];
-
-  // if (jsonDocument["addr"] == nullptr){
-  //   addr = getAddr(x_pos, y_pos);
-  // }
-
-  // if (jsonDocument["colorAddr"] != nullptr){
-  //   CRGB color = Wheel(colorAddr);
-  //   leds[addr] = color;
-  // } else {
-  //   leds[addr].setRGB(red_value, green_value, blue_value);
-  // }
-  // FastLED.show();  
-  // webServer.send(200, "");
-  // PRINT("Ending heap: ");
-  // HEAP();
 }
 
 void processTask(void* parameters) {
@@ -226,10 +163,6 @@ void setup()
 
   writeRequest.setDebug(Serial);
 
-  // webServer.on("/", HTTP_GET, handleRoot);
-  // webServer.onNotFound(handleNotFound);
-  // webServer.on("/api/v1/push", HTTP_POST, handlePost);
-  // webServer.begin();
   server.on("/", HTTP_GET, [](AsyncWebServerRequest* request) {
     request->send(200, "text/plain", "Hello, world");
     });
@@ -253,22 +186,5 @@ void setup()
 
 void loop()
 {
-  // uint8_t len;
-  // if (xQueueReceive(queue, &len, portMAX_DELAY) != pdTRUE) {
-  //   Serial.println("Timed out waiting for queue message");
-  //   return;
-  // }
-  // if (xSemaphoreTake(bufferMtx, 100) != pdTRUE) {
-  //   Serial.println("Timed out waiting for mutex");
-  //   return;
-  // }
-  // writeRequest.fromSnappyProto(buffer, len);
-  // xSemaphoreGive(bufferMtx);
-
-
-
-
-  // put your main code here, to run repeatedly:
-  // webServer.handleClient();
   vTaskDelay(10);
 }
