@@ -37,24 +37,57 @@ AsyncWebServer server(80);
 //   webServer.send(404, "text/plain", "Not found");
 // }
 
-WriteRequest writeRequest(1, 1024);
+WriteRequest writeRequest(1, 2048);
+
+QueueHandle_t queue;
+SemaphoreHandle_t  bufferMtx;
+uint8_t buffer[2048];
+uint8_t queueItem = 1;
+
 
 void notFound(AsyncWebServerRequest* request) {
   request->send(404, "text/plain", "Not found");
 }
 
 void handlePost(AsyncWebServerRequest* request, uint8_t* data, size_t len, size_t index, size_t total) {
-  PRINT("Starting heap: ");
-  HEAP();
+  // PRINT("Starting heap: ");
+  // HEAP();
+  // Serial.print("Stack high water mark: ");
+  // Serial.println(uxTaskGetStackHighWaterMark(NULL));
 
   Serial.println("received call to /api/v1/push");
+  Serial.println(xPortGetCoreID());
   Serial.print("len: ");
-  Serial.println(len);
+  Serial.print(len);
+  Serial.print(" index: ");
+  Serial.print(index);
+  Serial.print(" total: ");
+  Serial.println(total);
 
-  // TODO when data was too big we crashed the stack for the task
-  if (len > 70) {
+  if (len != total) {
+    Serial.println("len != total, we can't handle big packets yet");
     return;
   }
+
+  if (len > sizeof(buffer)) {
+    Serial.println("len > sizeof(buffer)");
+    return;
+  }
+
+  if (xSemaphoreTake(bufferMtx, 10) != pdTRUE) {
+    Serial.println("Timed out taking bufferMtx, skipping this message");
+    return;
+  }
+  if (xQueueSend(queue, &len, 0) != pdTRUE) {
+    // I don't think this is possible to end up here, but just in case.
+    Serial.println("had the mutex but the queue was full");
+    xSemaphoreGive(bufferMtx);
+    return;
+  }
+  // Copy the data into the buffer
+  memcpy(buffer, data, len);
+  xSemaphoreGive(bufferMtx);
+
 
 
   // if (webServer.hasArg("plain") == false) {
@@ -75,7 +108,6 @@ void handlePost(AsyncWebServerRequest* request, uint8_t* data, size_t len, size_
 
 
 
-  writeRequest.fromSnappyProto(data, len);
 
 
 
@@ -107,13 +139,49 @@ void handlePost(AsyncWebServerRequest* request, uint8_t* data, size_t len, size_
   // }
   // FastLED.show();  
   // webServer.send(200, "");
-  PRINT("Ending heap: ");
-  HEAP();
+  // PRINT("Ending heap: ");
+  // HEAP();
+}
+
+void processTask(void* parameters) {
+  uint8_t len;
+  for (;;) {
+    // Serial.println("waiting for message");
+    // Serial.println(xPortGetCoreID());
+    vTaskDelay(10);
+    if (xQueueReceive(queue, &len, 5) != pdTRUE) {
+      // Serial.println("Timed out waiting for queue message");
+      continue;
+    }
+    Serial.println("locking mutex");
+    if (xSemaphoreTake(bufferMtx, 100) != pdTRUE) {
+      // Serial.println("Timed out waiting for mutex");
+      continue;
+    }
+    Serial.println("deserializing");
+    uint64_t start = millis();
+    writeRequest.fromSnappyProto(buffer, len);
+    Serial.print("deserialized in ");
+    Serial.print(millis() - start);
+    Serial.println("ms");
+    Serial.println("returning mutex");
+    xSemaphoreGive(bufferMtx);
+  }
 }
 
 void setup()
 {
   Serial.begin(115200);
+  Serial.println(xPortGetCoreID());
+  Serial.print("Stack high water mark: ");
+  Serial.println(uxTaskGetStackHighWaterMark(NULL));
+
+  queue = xQueueCreate(1, sizeof(uint8_t));
+  bufferMtx = xSemaphoreCreateMutex();
+
+  if (queue == NULL) {
+    Serial.println("Error creating the queue");
+  }
 
   // pinMode(DATA_PIN, OUTPUT);
 
@@ -171,12 +239,36 @@ void setup()
     request->send(200, "text/plain", "");
     }, NULL, handlePost);
   server.begin();
+  Serial.print("Stack high water mark: ");
+  Serial.println(uxTaskGetStackHighWaterMark(NULL));
 
+  // TODO I don't know that this is needed anymore, we could maybe just put it back in loop()
+  // Snappy decompression needs a bigger stack, so we create a new task where we can define a bigger stack.
+  // xTaskCreate(processTask, "ProcessTask", 32768, NULL, 1, NULL);
+  xTaskCreatePinnedToCore(processTask, "ProcessTask", 8192, NULL, 1, NULL, 1);
 
 }
 
+
+
 void loop()
 {
+  // uint8_t len;
+  // if (xQueueReceive(queue, &len, portMAX_DELAY) != pdTRUE) {
+  //   Serial.println("Timed out waiting for queue message");
+  //   return;
+  // }
+  // if (xSemaphoreTake(bufferMtx, 100) != pdTRUE) {
+  //   Serial.println("Timed out waiting for mutex");
+  //   return;
+  // }
+  // writeRequest.fromSnappyProto(buffer, len);
+  // xSemaphoreGive(bufferMtx);
+
+
+
+
   // put your main code here, to run repeatedly:
   // webServer.handleClient();
+  vTaskDelay(10);
 }
