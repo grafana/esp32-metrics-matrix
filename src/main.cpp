@@ -24,11 +24,12 @@
     }
 
 // #define DATA_PIN 4
-#define RGB_BUILTIN 5
+// #define RGB_BUILTIN 5
 AsyncWebServer server(80);
 
 
-WriteRequest writeRequest(1, 2048);
+WriteRequest writeRequest(1, 4096);
+TimeSeries ts = TimeSeries(1, 20, 20, 100, 5);
 
 QueueHandle_t queue;
 SemaphoreHandle_t  bufferMtx;
@@ -102,6 +103,9 @@ void processTask(void* parameters) {
     Serial.print(millis() - start);
     Serial.println("ms");
     Serial.println("returning mutex");
+    Serial.print(ts.getLabel(1)->key);
+    Serial.print("=");
+    Serial.println(ts.getLabel(1)->val);
     xSemaphoreGive(bufferMtx);
   }
 }
@@ -122,7 +126,7 @@ void setup()
 
   // pinMode(DATA_PIN, OUTPUT);
 
-  // neopixelWrite(RGB_BUILTIN, RGB_BRIGHTNESS, 0, 0); // red
+  neopixelWrite(RGB_BUILTIN, 1, 0, 0); // red
 
   WiFi.mode(WIFI_STA);
   Serial.printf("Connecting to %s\n", ssid);
@@ -161,6 +165,8 @@ void setup()
   }
   delay(100);
 
+  
+  writeRequest.addTimeSeries(ts);
   writeRequest.setDebug(Serial);
 
   server.on("/", HTTP_GET, [](AsyncWebServerRequest* request) {
