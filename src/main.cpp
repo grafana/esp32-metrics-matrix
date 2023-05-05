@@ -3,9 +3,14 @@
 // #include <WebServer.h>
 #include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h>
+#include "certificates.h"
 #include "secrets.h"
 
-#include <WriteRequest.h>
+#include <PromLokiTransport.h>
+#include <PrometheusArduino.h>
+
+PromLokiTransport transport;
+PromClient client(transport);
 
 
 #define PRINT(...)                  \
@@ -114,8 +119,7 @@ void setup()
 {
   Serial.begin(115200);
   Serial.println(xPortGetCoreID());
-  Serial.print("Stack high water mark: ");
-  Serial.println(uxTaskGetStackHighWaterMark(NULL));
+
 
   queue = xQueueCreate(1, sizeof(uint8_t));
   bufferMtx = xSemaphoreCreateMutex();
@@ -128,42 +132,66 @@ void setup()
 
   neopixelWrite(RGB_BUILTIN, 1, 0, 0); // red
 
-  WiFi.mode(WIFI_STA);
-  Serial.printf("Connecting to %s\n", ssid);
 
-  WiFi.disconnect(true, true);
-  WiFi.begin(ssid, pass);
-
-  uint8_t wifiAttempts = 0;
-  static uint8_t ledState = 0;
-
-  while (WiFi.status() != WL_CONNECTED && wifiAttempts < 20)
-  {
-    Serial.print(".");
-    ledState = ledState == 0 ? 1 : 0;
-    // neopixelWrite(RGB_BUILTIN, ledState == 0 ? RGB_BRIGHTNESS : 0, 0, 0); // Red
-
-    delay(1000);
-    if (wifiAttempts == 10)
-    {
-      WiFi.disconnect(true, true); // Switch off the wifi on making 10 attempts and start again.
-      WiFi.begin(ssid, pass);
+  // Configure and start the transport layer
+    transport.setUseTls(true);
+    transport.setCerts(grafanaCert, strlen(grafanaCert));
+    transport.setWifiSsid(WIFI_SSID);
+    transport.setWifiPass(WIFI_PASSWORD);
+    transport.setDebug(Serial);  // Remove this line to disable debug logging of the client.
+    if (!transport.begin()) {
+        Serial.println(transport.errmsg);
+        while (true) {};
     }
-    wifiAttempts++;
-  }
-  if (WiFi.status() == WL_CONNECTED)
-  {
-    // neopixelWrite(RGB_BUILTIN, 0, RGB_BRIGHTNESS, 0); // green
-    WiFi.setAutoReconnect(true);                      // Not necessary
-    Serial.println();                                 // Not necessary
-    Serial.print("Connected with IP: ");              // Not necessary
-    Serial.println(WiFi.localIP());                   // Not necessary
-  }
-  else
-  {
-    WiFi.disconnect(true, true);
-  }
-  delay(100);
+
+    // Configure the client
+    client.setUrl(GC_URL);
+    client.setPath((char*)GC_PATH);
+    client.setPort(GC_PORT);
+    client.setUser(GC_USER);
+    client.setPass(GC_PASS);
+    client.setDebug(Serial);  // Remove this line to disable debug logging of the client.
+    if (!client.begin()) {
+        Serial.println(client.errmsg);
+        while (true) {};
+    }
+
+  // WiFi.mode(WIFI_STA);
+  // Serial.printf("Connecting to %s\n", ssid);
+
+  // WiFi.disconnect(true, true);
+  // WiFi.begin(ssid, pass);
+
+  // uint8_t wifiAttempts = 0;
+  // static uint8_t ledState = 0;
+
+  // while (WiFi.status() != WL_CONNECTED && wifiAttempts < 20)
+  // {
+  //   Serial.print(".");
+  //   ledState = ledState == 0 ? 1 : 0;
+  //   // neopixelWrite(RGB_BUILTIN, ledState == 0 ? RGB_BRIGHTNESS : 0, 0, 0); // Red
+
+  //   delay(1000);
+  //   if (wifiAttempts == 10)
+  //   {
+  //     WiFi.disconnect(true, true); // Switch off the wifi on making 10 attempts and start again.
+  //     WiFi.begin(ssid, pass);
+  //   }
+  //   wifiAttempts++;
+  // }
+  // if (WiFi.status() == WL_CONNECTED)
+  // {
+  //   // neopixelWrite(RGB_BUILTIN, 0, RGB_BRIGHTNESS, 0); // green
+  //   WiFi.setAutoReconnect(true);                      // Not necessary
+  //   Serial.println();                                 // Not necessary
+  //   Serial.print("Connected with IP: ");              // Not necessary
+  //   Serial.println(WiFi.localIP());                   // Not necessary
+  // }
+  // else
+  // {
+  //   WiFi.disconnect(true, true);
+  // }
+  // delay(100);
 
   
   writeRequest.addTimeSeries(ts);
