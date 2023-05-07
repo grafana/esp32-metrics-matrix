@@ -36,6 +36,9 @@ AsyncWebServer server(80);
 WriteRequest writeRequest(1, 4096);
 TimeSeries ts = TimeSeries(1, 20, 20, 100, 5);
 
+ReadRequest readRequest(1, 1024);
+TimeSeries querySeries = TimeSeries(1, 20, 20, 50, 5);
+
 QueueHandle_t queue;
 SemaphoreHandle_t  bufferMtx;
 uint8_t buffer[2048];
@@ -47,10 +50,6 @@ void notFound(AsyncWebServerRequest* request) {
 }
 
 void handlePost(AsyncWebServerRequest* request, uint8_t* data, size_t len, size_t index, size_t total) {
-  // PRINT("Starting heap: ");
-  // HEAP();
-  // Serial.print("Stack high water mark: ");
-  // Serial.println(uxTaskGetStackHighWaterMark(NULL));
 
   Serial.println("received call to /api/v1/push");
   Serial.println(xPortGetCoreID());
@@ -138,6 +137,7 @@ void setup()
     transport.setCerts(grafanaCert, strlen(grafanaCert));
     transport.setWifiSsid(WIFI_SSID);
     transport.setWifiPass(WIFI_PASSWORD);
+    transport.setNtpServer(NTP_SERVER);
     transport.setDebug(Serial);  // Remove this line to disable debug logging of the client.
     if (!transport.begin()) {
         Serial.println(transport.errmsg);
@@ -155,47 +155,12 @@ void setup()
         Serial.println(client.errmsg);
         while (true) {};
     }
-
-  // WiFi.mode(WIFI_STA);
-  // Serial.printf("Connecting to %s\n", ssid);
-
-  // WiFi.disconnect(true, true);
-  // WiFi.begin(ssid, pass);
-
-  // uint8_t wifiAttempts = 0;
-  // static uint8_t ledState = 0;
-
-  // while (WiFi.status() != WL_CONNECTED && wifiAttempts < 20)
-  // {
-  //   Serial.print(".");
-  //   ledState = ledState == 0 ? 1 : 0;
-  //   // neopixelWrite(RGB_BUILTIN, ledState == 0 ? RGB_BRIGHTNESS : 0, 0, 0); // Red
-
-  //   delay(1000);
-  //   if (wifiAttempts == 10)
-  //   {
-  //     WiFi.disconnect(true, true); // Switch off the wifi on making 10 attempts and start again.
-  //     WiFi.begin(ssid, pass);
-  //   }
-  //   wifiAttempts++;
-  // }
-  // if (WiFi.status() == WL_CONNECTED)
-  // {
-  //   // neopixelWrite(RGB_BUILTIN, 0, RGB_BRIGHTNESS, 0); // green
-  //   WiFi.setAutoReconnect(true);                      // Not necessary
-  //   Serial.println();                                 // Not necessary
-  //   Serial.print("Connected with IP: ");              // Not necessary
-  //   Serial.println(WiFi.localIP());                   // Not necessary
-  // }
-  // else
-  // {
-  //   WiFi.disconnect(true, true);
-  // }
-  // delay(100);
-
   
   writeRequest.addTimeSeries(ts);
   writeRequest.setDebug(Serial);
+
+  readRequest.addTimeSeries(querySeries);
+  readRequest.setDebug(Serial);
 
   server.on("/", HTTP_GET, [](AsyncWebServerRequest* request) {
     request->send(200, "text/plain", "Hello, world");
@@ -220,5 +185,8 @@ void setup()
 
 void loop()
 {
-  vTaskDelay(10);
+  const char* query = "dump1090_recent_aircraft_observed{job=\"dump1090\"}";
+  client.instantQuery(readRequest, (char*)query, strlen(query));
+  Serial.println(querySeries.getSample(0)->val);
+  vTaskDelay(5000);
 }
