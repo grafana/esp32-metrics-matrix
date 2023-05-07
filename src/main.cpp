@@ -28,10 +28,7 @@ PromClient client(transport);
       Serial.println(freeMemory()); \
     }
 
-// #define DATA_PIN 4
-// #define RGB_BUILTIN 5
 AsyncWebServer server(80);
-
 
 WriteRequest writeRequest(1, 4096);
 TimeSeries ts = TimeSeries(1, 20, 20, 100, 5);
@@ -44,6 +41,21 @@ SemaphoreHandle_t  bufferMtx;
 uint8_t buffer[2048];
 uint8_t queueItem = 1;
 
+
+// LED Definitions
+#define RGB_BRIGHTNESS 10
+#define LED_PIN 4
+
+const int LEDsH = 8; // edit with your dimensions
+const int LEDsW = 32;
+
+#include <Adafruit_NeoPixel.h>
+Adafruit_NeoPixel pixels(LEDsH*LEDsW, LED_PIN, NEO_GRB + NEO_KHZ800);
+
+String displayString = "hello";
+uint32_t displayColor = pixels.Color(0,0,25);
+
+#include "ledUtil.h"
 
 void notFound(AsyncWebServerRequest* request) {
   request->send(404, "text/plain", "Not found");
@@ -188,5 +200,8 @@ void loop()
   const char* query = "dump1090_recent_aircraft_observed{job=\"dump1090\"}";
   client.instantQuery(readRequest, (char*)query, strlen(query));
   Serial.println(querySeries.getSample(0)->val);
+  pixels.clear();
+  displayString = String(querySeries.getSample(0)->val);
+  displayTextOnPanel(displayString, displayColor);
   vTaskDelay(5000);
 }
