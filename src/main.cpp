@@ -1,13 +1,16 @@
 #include <Arduino.h>
 #include <WiFi.h>
-// #include <WebServer.h>
+#include <Preferences.h>
+
 #include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h>
+
 #include "certificates.h"
 #include "secrets.h"
 
 #include <PromLokiTransport.h>
 #include <PrometheusArduino.h>
+#include "webserver.h"
 
 PromLokiTransport transport;
 PromClient client(transport);
@@ -28,12 +31,14 @@ PromClient client(transport);
       Serial.println(freeMemory()); \
     }
 
+Preferences preferences;
+
 AsyncWebServer server(80);
 
 WriteRequest writeRequest(1, 4096);
 TimeSeries ts = TimeSeries(1, 20, 20, 100, 5);
 
-ReadRequest readRequest(1, 1024);
+ReadRequest readRequest(1, 2048);
 TimeSeries querySeries = TimeSeries(1, 20, 20, 50, 5);
 
 QueueHandle_t queue;
@@ -50,10 +55,13 @@ const int LEDsH = 8; // edit with your dimensions
 const int LEDsW = 32;
 
 #include <Adafruit_NeoPixel.h>
-Adafruit_NeoPixel pixels(LEDsH*LEDsW, LED_PIN, NEO_GRB + NEO_KHZ800);
+Adafruit_NeoPixel pixels(LEDsH* LEDsW, LED_PIN, NEO_GRB + NEO_KHZ800);
 
 String displayString = "hello";
-uint32_t displayColor = pixels.Color(0,0,25);
+uint32_t displayColor = pixels.Color(10, 0, 10);
+
+// Allow up to 1000 characters for the query
+char query[1000];
 
 #include "ledUtil.h"
 
@@ -64,7 +72,6 @@ void notFound(AsyncWebServerRequest* request) {
 void handlePost(AsyncWebServerRequest* request, uint8_t* data, size_t len, size_t index, size_t total) {
 
   Serial.println("received call to /api/v1/push");
-  Serial.println(xPortGetCoreID());
   Serial.print("len: ");
   Serial.print(len);
   Serial.print(" index: ");
@@ -126,11 +133,16 @@ void processTask(void* parameters) {
   }
 }
 
+String processor(const String& var) {
+  if (var == "QUERY")
+    return String(query);
+  return String();
+}
+
 void setup()
 {
   Serial.begin(115200);
   Serial.println(xPortGetCoreID());
-
 
   queue = xQueueCreate(1, sizeof(uint8_t));
   bufferMtx = xSemaphoreCreateMutex();
@@ -145,43 +157,73 @@ void setup()
 
 
   // Configure and start the transport layer
-    transport.setUseTls(true);
-    transport.setCerts(grafanaCert, strlen(grafanaCert));
-    transport.setWifiSsid(WIFI_SSID);
-    transport.setWifiPass(WIFI_PASSWORD);
-    transport.setNtpServer(NTP_SERVER);
-    transport.setDebug(Serial);  // Remove this line to disable debug logging of the client.
-    if (!transport.begin()) {
-        Serial.println(transport.errmsg);
-        while (true) {};
-    }
+  transport.setUseTls(true);
+  transport.setCerts(grafanaCert, strlen(grafanaCert));
+  transport.setWifiSsid(WIFI_SSID);
+  transport.setWifiPass(WIFI_PASSWORD);
+  transport.setNtpServer(NTP_SERVER);
+  transport.setDebug(Serial);  // Remove this line to disable debug logging of the client.
+  if (!transport.begin()) {
+    Serial.println(transport.errmsg);
+    while (true) {};
+  }
 
-    // Configure the client
-    client.setUrl(GC_URL);
-    client.setPath((char*)GC_PATH);
-    client.setPort(GC_PORT);
-    client.setUser(GC_USER);
-    client.setPass(GC_PASS);
-    client.setDebug(Serial);  // Remove this line to disable debug logging of the client.
-    if (!client.begin()) {
-        Serial.println(client.errmsg);
-        while (true) {};
-    }
-  
+  // Configure the client
+  client.setUrl(GC_URL);
+  client.setPath((char*)GC_PATH);
+  //client.setQueryPath("/loki/api/v1");
+  client.setQueryPath("/api/prom/api/v1");
+  client.setPort(GC_PORT);
+  client.setUser(GC_USER);
+  client.setPass(GC_PASS);
+  client.setDebug(Serial);  // Remove this line to disable debug logging of the client.
+  if (!client.begin()) {
+    Serial.println(client.errmsg);
+    while (true) {};
+  }
+
   writeRequest.addTimeSeries(ts);
   writeRequest.setDebug(Serial);
 
   readRequest.addTimeSeries(querySeries);
   readRequest.setDebug(Serial);
 
-  server.on("/", HTTP_GET, [](AsyncWebServerRequest* request) {
-    request->send(200, "text/plain", "Hello, world");
-    });
 
+  // Load query from Preferences
+  preferences.begin("query", false);
+  size_t res = preferences.getString("query", query, sizeof(query));
+  if (res > 0) {
+    Serial.print("Loaded query from preferences: ");
+    Serial.println(query);
+  } else {
+    Serial.println("Failed to load query from preferences");
+    query[0] = '\0';
+  }
+
+  server.on("/", HTTP_GET, [](AsyncWebServerRequest* request) {
+    request->send_P(200, "text/html", index_html, processor);
+    });
   server.onNotFound(notFound);
   server.on("/api/v1/push", HTTP_POST, [](AsyncWebServerRequest* request) {
     request->send(200, "text/plain", "");
     }, NULL, handlePost);
+  server.on("/set-query", HTTP_POST, [](AsyncWebServerRequest* request) {
+    if (request->hasParam("query", true)) {
+      AsyncWebParameter* p = request->getParam("query", true);
+      if (p->value().length() > sizeof(query)) {
+        Serial.println("Query too long");
+        request->send(400, "text/plain", "Query too long");
+        return;
+      }
+      strcpy(query, p->value().c_str());
+      preferences.putString("query", query);
+      Serial.print("Set query to: ");
+      Serial.println(query);
+      request->redirect("/");
+    } else {
+      request->send(400, "text/plain", "Missing query parameter");
+    }
+    });
   server.begin();
   Serial.print("Stack high water mark: ");
   Serial.println(uxTaskGetStackHighWaterMark(NULL));
@@ -193,11 +235,13 @@ void setup()
 
 }
 
-
-
 void loop()
 {
-  const char* query = "dump1090_recent_aircraft_observed{job=\"dump1090\"}";
+  if (query[0] == '\0') {
+    Serial.println("No query set, skipping");
+    vTaskDelay(5000);
+    return;
+  }
   client.instantQuery(readRequest, (char*)query, strlen(query));
   Serial.println(querySeries.getSample(0)->val);
   pixels.clear();
