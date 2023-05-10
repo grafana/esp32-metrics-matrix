@@ -68,6 +68,8 @@ const char index_html[] PROGMEM = R""""(
             <input type="text" id="query" name="query" style="width: 90%%;">
             <input type="submit" value="Submit">
         </form>
+        <h3>Current Error</h3>
+        %ERROR%
         <br><br>
         <div class='footer'>
             <p>esp32-metrics-matrix</p>

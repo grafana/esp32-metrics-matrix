@@ -62,6 +62,8 @@ uint32_t displayColor = pixels.Color(10, 0, 10);
 
 // Allow up to 1000 characters for the query
 char query[1000];
+// Allow up to 1000 characters for the error message
+char error[1000];
 
 #include "ledUtil.h"
 
@@ -134,8 +136,12 @@ void processTask(void* parameters) {
 }
 
 String processor(const String& var) {
-  if (var == "QUERY")
+  if (var == "QUERY") {
     return String(query);
+  } else if (var == "ERROR") {
+    return String(error);
+  }
+    
   return String();
 }
 
@@ -199,6 +205,7 @@ void setup()
     Serial.println("Failed to load query from preferences");
     query[0] = '\0';
   }
+  error[0] = '\0';
 
   server.on("/", HTTP_GET, [](AsyncWebServerRequest* request) {
     request->send_P(200, "text/html", index_html, processor);
@@ -242,7 +249,17 @@ void loop()
     vTaskDelay(5000);
     return;
   }
-  client.instantQuery(readRequest, (char*)query, strlen(query));
+  PromClient::SendResult res = client.instantQuery(readRequest, (char*)query, strlen(query));
+  if (res != PromClient::SendResult::SUCCESS) {
+    Serial.print("Error sending query: ");
+    Serial.println(res);
+    Serial.println(client.errmsg);
+    strcpy(error, client.errmsg);
+    vTaskDelay(5000);
+    return;
+  } else {
+    error[0] = '\0';
+  }
   Serial.println(querySeries.getSample(0)->val);
   pixels.clear();
   displayString = String(querySeries.getSample(0)->val);
