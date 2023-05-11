@@ -48,20 +48,26 @@ uint8_t queueItem = 1;
 
 
 // LED Definitions
-#define RGB_BRIGHTNESS 10
-#define LED_PIN 4
+//#define RGB_BRIGHTNESS 10
+
+#define DATA_LED_PIN 4
+#define LABEL_LED_PIN 5
 
 const int LEDsH = 8; // edit with your dimensions
 const int LEDsW = 32;
 
 #include <Adafruit_NeoPixel.h>
-Adafruit_NeoPixel pixels(LEDsH* LEDsW, LED_PIN, NEO_GRB + NEO_KHZ800);
+Adafruit_NeoPixel labelArray(LEDsH* LEDsW, LABEL_LED_PIN, NEO_GRB + NEO_KHZ800);
+Adafruit_NeoPixel dataArray(LEDsH* LEDsW, DATA_LED_PIN, NEO_GRB + NEO_KHZ800);
 
 String displayString = "hello";
-uint32_t displayColor = pixels.Color(10, 0, 10);
+uint8_t red,green,blue = 0;
+uint32_t displayColor = dataArray.Color(10, 0, 10);
 
 // Allow up to 1000 characters for the query
 char query[1000];
+// Allow up to 11 characters for the label (10 + null terminator)
+char label[11];
 // Allow up to 1000 characters for the error message
 char error[1000];
 
@@ -138,10 +144,23 @@ void processTask(void* parameters) {
 String processor(const String& var) {
   if (var == "QUERY") {
     return String(query);
-  } else if (var == "ERROR") {
+  }
+  else if (var == "LABEL") {
+    return String(label);
+  }
+  else if (var == "ERROR") {
     return String(error);
   }
-    
+  else if (var == "RED") {
+    return String(red);
+  }
+  else if (var == "GREEN") {
+    return String(green);
+  }
+  else if (var == "BLUE") {
+    return String(blue);
+  }
+
   return String();
 }
 
@@ -201,10 +220,30 @@ void setup()
   if (res > 0) {
     Serial.print("Loaded query from preferences: ");
     Serial.println(query);
-  } else {
+  }
+  else {
     Serial.println("Failed to load query from preferences");
     query[0] = '\0';
   }
+  res = preferences.getString("label", label, sizeof(label));
+  if (res > 0) {
+    Serial.print("Loaded label from preferences: ");
+    Serial.println(label);
+  }
+  else {
+    Serial.println("Failed to load label from preferences");
+    label[0] = '\0';
+  }
+  red = preferences.getUChar("red", 10);
+  Serial.print("Loaded red value from preferences: ");
+  Serial.println(red);
+  green = preferences.getUChar("green", 0);
+  Serial.print("Loaded green value from preferences: ");
+  Serial.println(green);
+  blue = preferences.getUChar("blue", 10);
+  Serial.print("Loaded blue value from preferences: ");
+  Serial.println(blue);
+  
   error[0] = '\0';
 
   server.on("/", HTTP_GET, [](AsyncWebServerRequest* request) {
@@ -222,14 +261,62 @@ void setup()
         request->send(400, "text/plain", "Query too long");
         return;
       }
-      strcpy(query, p->value().c_str());
-      preferences.putString("query", query);
-      Serial.print("Set query to: ");
-      Serial.println(query);
-      request->redirect("/");
-    } else {
+      if (p->value().length() == 0) {
+        Serial.println("Query was empty, ignoring");
+      }
+      else {
+        strcpy(query, p->value().c_str());
+        preferences.putString("query", query);
+        Serial.print("Set query to: ");
+        Serial.println(query);
+      }
+    }
+    else {
       request->send(400, "text/plain", "Missing query parameter");
     }
+
+    if (request->hasParam("red", true)) {
+      AsyncWebParameter* p = request->getParam("red", true);
+      red = p->value().toInt();
+      preferences.putUChar("red", red);
+      Serial.print("Set red to: ");
+      Serial.println(red);
+    }
+    if (request->hasParam("green", true)) {
+      AsyncWebParameter* p = request->getParam("green", true);
+      green = p->value().toInt();
+      preferences.putUChar("green", green);
+      Serial.print("Set green to: ");
+      Serial.println(green);
+    }
+    if (request->hasParam("blue", true)) {
+      AsyncWebParameter* p = request->getParam("blue", true);
+      blue = p->value().toInt();
+      preferences.putUChar("blue", blue);
+      Serial.print("Set blue to: ");
+      Serial.println(blue);
+    }
+
+    if (request->hasParam("label", true)) {
+      AsyncWebParameter* p = request->getParam("label", true);
+      if (p->value().length() > sizeof(label)) {
+        Serial.println("Label too long");
+        request->send(400, "text/plain", "Label too long");
+        return;
+      }
+      if (p->value().length() == 0) {
+        Serial.println("Label was empty, ignoring");
+      }
+      else {
+        strcpy(label, p->value().c_str());
+        preferences.putString("label", label);
+        Serial.print("Set label to: ");
+        Serial.println(label);
+        labelArray.clear();
+        displayTextOnPanel((const char*)label, strlen(label), labelArray.Color(red, green, blue), labelArray);
+      }
+    }
+    request->redirect("/");
     });
   server.begin();
   Serial.print("Stack high water mark: ");
@@ -239,6 +326,15 @@ void setup()
   // Snappy decompression needs a bigger stack, so we create a new task where we can define a bigger stack.
   // xTaskCreate(processTask, "ProcessTask", 32768, NULL, 1, NULL);
   xTaskCreatePinnedToCore(processTask, "ProcessTask", 8192, NULL, 1, NULL, 1);
+
+  // Clear the display
+
+  labelArray.clear();
+  displayTextOnPanel((const char*)label, strlen(label), labelArray.Color(red, green, blue), labelArray);
+
+
+  dataArray.clear();
+  dataArray.show();
 
 }
 
@@ -257,12 +353,15 @@ void loop()
     strcpy(error, client.errmsg);
     vTaskDelay(5000);
     return;
-  } else {
+  }
+  else {
     error[0] = '\0';
   }
-  Serial.println(querySeries.getSample(0)->val);
-  pixels.clear();
-  displayString = String(querySeries.getSample(0)->val);
-  displayTextOnPanel(displayString, displayColor);
+  dataArray.clear();
+  double newVal = querySeries.getSample(0)->val;
+  char newValStr[20];
+  dtostrf(newVal, 0, 2, newValStr);
+  Serial.println(newValStr);
+  displayTextOnPanel(newValStr, strlen(newValStr), dataArray.Color(red, green, blue), dataArray);
   vTaskDelay(5000);
 }

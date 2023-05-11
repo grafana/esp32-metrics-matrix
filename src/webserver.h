@@ -1,8 +1,6 @@
 #ifndef webserver_h
 #define webserver_h
 
-#define TEMPLATE_PLACEHOLDER '`'
-
 const char index_html[] PROGMEM = R""""(
 <!DOCTYPE html>
 <html>
@@ -64,8 +62,13 @@ const char index_html[] PROGMEM = R""""(
         %QUERY%
         <h3>New Query</h3>
         <form method="POST" action="/set-query">
+            <label for="label">Label: (optional, only if you have a second matrix connected)</label><br>
+            <input type="text" id="label" name="label" maxlength="10" size="10" value="%LABEL%"><br><br>
             <label for="query">New Query:</label><br>
-            <input type="text" id="query" name="query" style="width: 90%%;">
+            <input type="text" id="query" name="query" style="width: 90%%;"><br><br>
+            <label for="red">Red:</label><input type="number" id="red" name="red" min="0" max="255" size="3" value="%RED%">
+            <label for="green">Green:</label><input type="number" id="green" name="green" min="0" max="255" size="3" value="%GREEN%">
+            <label for="blue">Blue:</label><input type="number" id="blue" name="blue" min="0" max="255" size="3" value="%BLUE%"><br><br>
             <input type="submit" value="Submit">
         </form>
         <h3>Current Error</h3>

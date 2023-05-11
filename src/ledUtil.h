@@ -977,11 +977,11 @@ int getCharPixel(char thisChar, int down, int left){
     }
 }
 
-void displayTextOnPanel(String strIn, uint32_t color){
+void displayTextOnPanel(const char* strIn, size_t strLen, uint32_t color, Adafruit_NeoPixel& strip){
     int maxWidth = 0;
     int offset = 0;
-    for (int i = 0; i < strIn.length(); i++){
-        char thisChar = strIn.charAt(i);
+    for (int i = 0; i < strLen; i++){
+        char thisChar = strIn[i];
         maxWidth += lengths[thisChar-32];
     }
 
@@ -996,30 +996,30 @@ void displayTextOnPanel(String strIn, uint32_t color){
     int charColOffset = 0;
     
     for (int column = 0; column < maxWidth; column++){
-        char thisChar = strIn.charAt(charOffset);
+        char thisChar = strIn[charOffset];
         int innerCharOffset = charOffset;
         int innerCharColOffset = charColOffset;
         
         for(int x=(maxWidth-1)+offset; x>=offset; x--){
-          char innerThisChar = strIn.charAt(innerCharOffset);
+          char innerThisChar = strIn[innerCharOffset];
           for(int y=0; y<LEDsH; y++){
             int pixel = getCharPixel(innerThisChar, y, innerCharColOffset);
             int addr = getAddr(x, y);
-            uint32_t showColor = pixel == 1 ? color : pixels.Color(0,0,0);
-            pixels.setPixelColor(addr, showColor);
+            uint32_t showColor = pixel == 1 ? color : strip.Color(0,0,0);
+            strip.setPixelColor(addr, showColor);
           }
           
           innerCharColOffset++;
           if (innerCharColOffset > (lengths[innerThisChar - 32] -1)){
             innerCharOffset++;
                 
-            if (innerCharOffset > (strIn.length()-1)){
+            if (innerCharOffset > (strLen-1)){
               innerCharOffset = 0;
             }
                 
             innerCharColOffset = 0;
           }
         }
-        pixels.show();
+        strip.show();
     }
 }
