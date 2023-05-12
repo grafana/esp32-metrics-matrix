@@ -62,8 +62,9 @@ const char index_html[] PROGMEM = R""""(
         %QUERY%
         <h3>New Query</h3>
         <form method="POST" action="/set-query">
-            <label for="label">Label: (optional, only if you have a second matrix connected)</label><br>
-            <input type="text" id="label" name="label" maxlength="10" size="10" value="%LABEL%"><br><br>
+            <label for="label">Label: </label><br>
+            <input type="text" id="label" name="label" maxlength="10" size="10" value="%LABEL%"><br>
+            <input type="checkbox" id="useSecondMatrix" name="useSecondMatrix" %USESECONDMATRIX%><label for="useSecondMatrix">Use 2nd Matrix for label</label><br><br>
             <label for="query">New Query:</label><br>
             <input type="text" id="query" name="query" style="width: 90%%;"><br><br>
             <label for="red">Red:</label><input type="number" id="red" name="red" min="0" max="255" size="3" value="%RED%">

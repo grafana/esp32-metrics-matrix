@@ -61,7 +61,8 @@ Adafruit_NeoPixel labelArray(LEDsH* LEDsW, LABEL_LED_PIN, NEO_GRB + NEO_KHZ800);
 Adafruit_NeoPixel dataArray(LEDsH* LEDsW, DATA_LED_PIN, NEO_GRB + NEO_KHZ800);
 
 String displayString = "hello";
-uint8_t red,green,blue = 0;
+uint8_t red, green, blue = 0;
+boolean useSecondMatrix = true;
 uint32_t displayColor = dataArray.Color(10, 0, 10);
 
 // Allow up to 1000 characters for the query
@@ -147,6 +148,9 @@ String processor(const String& var) {
   }
   else if (var == "LABEL") {
     return String(label);
+  }
+  else if (var == "USESECONDMATRIX") {
+    return useSecondMatrix ? "checked" : String();
   }
   else if (var == "ERROR") {
     return String(error);
@@ -234,6 +238,9 @@ void setup()
     Serial.println("Failed to load label from preferences");
     label[0] = '\0';
   }
+  useSecondMatrix = preferences.getBool("useSecondMatrix", useSecondMatrix);
+  Serial.print("Loaded useSecondMatrix value from preferences: ");
+  Serial.println(useSecondMatrix);
   red = preferences.getUChar("red", 10);
   Serial.print("Loaded red value from preferences: ");
   Serial.println(red);
@@ -243,7 +250,7 @@ void setup()
   blue = preferences.getUChar("blue", 10);
   Serial.print("Loaded blue value from preferences: ");
   Serial.println(blue);
-  
+
   error[0] = '\0';
 
   server.on("/", HTTP_GET, [](AsyncWebServerRequest* request) {
@@ -273,6 +280,18 @@ void setup()
     }
     else {
       request->send(400, "text/plain", "Missing query parameter");
+    }
+
+    if (request->hasParam("useSecondMatrix", true)) {
+      AsyncWebParameter* p = request->getParam("useSecondMatrix", true);
+      useSecondMatrix = p->value();
+      preferences.putBool("useSecondMatrix", useSecondMatrix);
+      Serial.print("Set useSecondMatrix to: ");
+      Serial.println(useSecondMatrix);
+    } else {
+      useSecondMatrix = false;
+      preferences.putBool("useSecondMatrix", false);
+      Serial.println("No useSecondMatrix, set param to: false");
     }
 
     if (request->hasParam("red", true)) {
@@ -362,6 +381,15 @@ void loop()
   char newValStr[20];
   dtostrf(newVal, 0, 2, newValStr);
   Serial.println(newValStr);
+
+  if (!useSecondMatrix && strlen(label) > 0) {
+    byte lastChar = strlen(newValStr)-1;
+    if (newValStr[lastChar]=='0'){
+      newValStr[lastChar] = ' ';
+    }
+    strcat(newValStr, label);
+  }
+
   displayTextOnPanel(newValStr, strlen(newValStr), dataArray.Color(red, green, blue), dataArray);
   vTaskDelay(5000);
 }
