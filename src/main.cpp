@@ -67,6 +67,7 @@ uint32_t displayColor = dataArray.Color(10, 0, 10);
 
 // Allow up to 1000 characters for the query
 char query[1000];
+String escapedQuery;
 // Allow up to 11 characters for the label (10 + null terminator)
 char label[11];
 // Allow up to 1000 characters for the error message
@@ -142,12 +143,54 @@ void processTask(void* parameters) {
   }
 }
 
+void htmlEncode(char* str, uint16_t len) {
+escapedQuery = "";
+  for (uint16_t i = 0; i < len; i++) {
+    switch (str[i]) {
+      // The template parser uses %, so we encode these by doubling them
+    case '%':
+      escapedQuery += "%%";
+      break;
+    case '&':
+      escapedQuery += "&amp;";
+      break;
+    case '<':
+      escapedQuery += "&lt;";
+      break;
+    case '>':
+      escapedQuery += "&gt;";
+      break;
+    case '"':
+      escapedQuery += "&quot;";
+      break;
+    case '\'':
+      escapedQuery += "&apos;";
+      break;
+    default:
+      escapedQuery += str[i];
+    }
+  }
+}
+
+void htmlDecode(const String& encoded, char* output) {
+  escapedQuery = encoded;
+  escapedQuery.replace("%%", "%");
+  escapedQuery.replace("&amp;", "&");
+  escapedQuery.replace("&lt;", "<");
+  escapedQuery.replace("&gt;", ">");
+  escapedQuery.replace("&quot;", "\"");
+  escapedQuery.replace("&apos;", "\'");
+  escapedQuery.toCharArray(output, escapedQuery.length() + 1);
+}
+
 String processor(const String& var) {
   if (var == "QUERY") {
-    return String(query);
+    htmlEncode(query, strlen(query));
+    return escapedQuery;
   }
   else if (var == "LABEL") {
-    return String(label);
+    htmlEncode(label, strlen(label));
+    return escapedQuery;
   }
   else if (var == "USESECONDMATRIX") {
     return useSecondMatrix ? "checked" : String();
@@ -217,6 +260,8 @@ void setup()
   readRequest.addTimeSeries(querySeries);
   readRequest.setDebug(Serial);
 
+  // Try to allocate some consistent space for the query, assuming the escaped version won't be more than double in size.
+  escapedQuery.reserve(sizeof(query) * 2);
 
   // Load query from Preferences
   preferences.begin("query", false);
@@ -272,7 +317,7 @@ void setup()
         Serial.println("Query was empty, ignoring");
       }
       else {
-        strcpy(query, p->value().c_str());
+        htmlDecode(p->value(), query);
         preferences.putString("query", query);
         Serial.print("Set query to: ");
         Serial.println(query);
@@ -288,7 +333,8 @@ void setup()
       preferences.putBool("useSecondMatrix", useSecondMatrix);
       Serial.print("Set useSecondMatrix to: ");
       Serial.println(useSecondMatrix);
-    } else {
+    }
+    else {
       useSecondMatrix = false;
       preferences.putBool("useSecondMatrix", false);
       Serial.println("No useSecondMatrix, set param to: false");
@@ -383,8 +429,8 @@ void loop()
   Serial.println(newValStr);
 
   if (!useSecondMatrix && strlen(label) > 0) {
-    byte lastChar = strlen(newValStr)-1;
-    if (newValStr[lastChar]=='0'){
+    byte lastChar = strlen(newValStr) - 1;
+    if (newValStr[lastChar] == '0') {
       newValStr[lastChar] = ' ';
     }
     strcat(newValStr, label);
