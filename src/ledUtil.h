@@ -1020,6 +1020,6 @@ void displayTextOnPanel(const char* strIn, size_t strLen, uint32_t color, Adafru
             innerCharColOffset = 0;
           }
         }
-        strip.show();
     }
+    strip.show();
 }
