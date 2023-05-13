@@ -62,7 +62,6 @@ Adafruit_NeoPixel dataArray(LEDsH* LEDsW, DATA_LED_PIN, NEO_GRB + NEO_KHZ800);
 
 String displayString = "hello";
 uint8_t red, green, blue = 0;
-boolean useSecondMatrix = true;
 uint32_t displayColor = dataArray.Color(10, 0, 10);
 
 // Allow up to 1000 characters for the query
@@ -70,6 +69,8 @@ char query[1000];
 String escapedQuery;
 // Allow up to 11 characters for the label (10 + null terminator)
 char label[11];
+// Allow up to 6 characters for the label (5 + null terminator)
+char unit[6];
 // Allow up to 1000 characters for the error message
 char error[1000];
 
@@ -144,7 +145,7 @@ void processTask(void* parameters) {
 }
 
 void htmlEncode(char* str, uint16_t len) {
-escapedQuery = "";
+  escapedQuery = "";
   for (uint16_t i = 0; i < len; i++) {
     switch (str[i]) {
       // The template parser uses %, so we encode these by doubling them
@@ -192,8 +193,9 @@ String processor(const String& var) {
     htmlEncode(label, strlen(label));
     return escapedQuery;
   }
-  else if (var == "USESECONDMATRIX") {
-    return useSecondMatrix ? "checked" : String();
+  else if (var == "UNIT") {
+    htmlEncode(unit, strlen(unit));
+    return escapedQuery;
   }
   else if (var == "ERROR") {
     return String(error);
@@ -283,9 +285,15 @@ void setup()
     Serial.println("Failed to load label from preferences");
     label[0] = '\0';
   }
-  useSecondMatrix = preferences.getBool("useSecondMatrix", useSecondMatrix);
-  Serial.print("Loaded useSecondMatrix value from preferences: ");
-  Serial.println(useSecondMatrix);
+  res = preferences.getString("unit", unit, sizeof(unit));
+  if (res > 0) {
+    Serial.print("Loaded unit from preferences: ");
+    Serial.println(unit);
+  }
+  else {
+    Serial.println("Failed to load unit from preferences");
+    unit[0] = '\0';
+  }
   red = preferences.getUChar("red", 10);
   Serial.print("Loaded red value from preferences: ");
   Serial.println(red);
@@ -327,19 +335,6 @@ void setup()
       request->send(400, "text/plain", "Missing query parameter");
     }
 
-    if (request->hasParam("useSecondMatrix", true)) {
-      AsyncWebParameter* p = request->getParam("useSecondMatrix", true);
-      useSecondMatrix = p->value();
-      preferences.putBool("useSecondMatrix", useSecondMatrix);
-      Serial.print("Set useSecondMatrix to: ");
-      Serial.println(useSecondMatrix);
-    }
-    else {
-      useSecondMatrix = false;
-      preferences.putBool("useSecondMatrix", false);
-      Serial.println("No useSecondMatrix, set param to: false");
-    }
-
     if (request->hasParam("red", true)) {
       AsyncWebParameter* p = request->getParam("red", true);
       red = p->value().toInt();
@@ -370,16 +365,35 @@ void setup()
         return;
       }
       if (p->value().length() == 0) {
-        Serial.println("Label was empty, ignoring");
+        Serial.println("Label was empty, clearing");
+        label[0] = '\0';
       }
       else {
-        strcpy(label, p->value().c_str());
-        preferences.putString("label", label);
-        Serial.print("Set label to: ");
-        Serial.println(label);
-        labelArray.clear();
-        displayTextOnPanel((const char*)label, strlen(label), labelArray.Color(red, green, blue), labelArray);
+        htmlDecode(p->value(), label);
       }
+      preferences.putString("label", label);
+      Serial.print("Set label to: ");
+      Serial.println(label);
+      labelArray.clear();
+      displayTextOnPanel((const char*)label, strlen(label), labelArray.Color(red, green, blue), labelArray);
+    }
+    if (request->hasParam("unit", true)) {
+      AsyncWebParameter* p = request->getParam("unit", true);
+      if (p->value().length() > sizeof(unit)) {
+        Serial.println("Unit too long");
+        request->send(400, "text/plain", "Unit too long");
+        return;
+      }
+      if (p->value().length() == 0) {
+        Serial.println("Unit was empty, clearing unit");
+        unit[0] = '\0';
+      }
+      else {
+        htmlDecode(p->value(), unit);
+      }
+      preferences.putString("unit", unit);
+      Serial.print("Set unit to: ");
+      Serial.println(unit);
     }
     request->redirect("/");
     });
@@ -428,12 +442,12 @@ void loop()
   dtostrf(newVal, 0, 2, newValStr);
   Serial.println(newValStr);
 
-  if (!useSecondMatrix && strlen(label) > 0) {
+  if (strlen(unit) > 0) {
     byte lastChar = strlen(newValStr) - 1;
     if (newValStr[lastChar] == '0') {
       newValStr[lastChar] = ' ';
     }
-    strcat(newValStr, label);
+    strcat(newValStr, unit);
   }
 
   displayTextOnPanel(newValStr, strlen(newValStr), dataArray.Color(red, green, blue), dataArray);
