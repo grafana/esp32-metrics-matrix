@@ -53,16 +53,21 @@ const char index_html[] PROGMEM = R""""(
             background-color: #000000;
             padding: 0.5em;
         }
+            .small-text {
+            font-size: smaller;
+        }
     </style>
 </head>
 <body>
     <div class='container'>
         <h1>ESP32 LED Matrix</h1>
         <form method="POST" action="/set-query">
-            <label for="label">Label: (optional, displays on second matrix if connected)</label><br>
+            <label for="label">Label: <span class="small-text">(optional, displays on second matrix if connected)</span></label><br>
             <input type="text" id="label" name="label" maxlength="10" size="10" value="%LABEL%"><br>
-            <label for="unit">Unit: </label><br>
+            <label for="unit">Unit: <span class="small-text">(hint: use a leading space to make the unit easier to read)</span></label><br>
             <input type="text" id="unit" name="unit" maxlength="5" size="10" value="%UNIT%"><br>
+            <label for="precision">Precision: <span class="small-text">(number of decimal digits to display)</span></label><br>
+            <input type="number" id="precision" name="precision" min="0" max="5" size="3" value="%PRECISION%"><br>
             <label for="query">Query:</label><br>
             <input type="text" id="query" name="query" style="width: 90%%;" value="%QUERY%"><br><br>
             <label for="red">Red:</label><input type="number" id="red" name="red" min="0" max="255" size="3" value="%RED%">

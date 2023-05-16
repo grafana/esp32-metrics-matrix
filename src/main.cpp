@@ -1,9 +1,11 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <Preferences.h>
+#include <esp_task_wdt.h>
 
 #include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h>
+#include <ESPmDNS.h>
 
 #include "certificates.h"
 #include "secrets.h"
@@ -15,6 +17,8 @@
 PromLokiTransport transport;
 PromClient client(transport);
 
+//60 seconds WDT
+#define WDT_TIMEOUT 60
 
 #define PRINT(...)                  \
     {                               \
@@ -62,6 +66,7 @@ Adafruit_NeoPixel dataArray(LEDsH* LEDsW, DATA_LED_PIN, NEO_GRB + NEO_KHZ800);
 
 String displayString = "hello";
 uint8_t red, green, blue = 0;
+uint8_t precision = 1;
 uint32_t displayColor = dataArray.Color(10, 0, 10);
 
 // Allow up to 1000 characters for the query
@@ -71,7 +76,7 @@ String escapedQuery;
 char label[11];
 // Allow up to 6 characters for the label (5 + null terminator)
 char unit[6];
-// Allow up to 1000 characters for the error message
+// Allow up to 2 characters for the precision (1 + null terminator)
 char error[1000];
 
 #include "ledUtil.h"
@@ -197,6 +202,9 @@ String processor(const String& var) {
     htmlEncode(unit, strlen(unit));
     return escapedQuery;
   }
+  else if (var == "PRECISION") {
+    return String(precision);
+  }
   else if (var == "ERROR") {
     return String(error);
   }
@@ -213,8 +221,21 @@ String processor(const String& var) {
   return String();
 }
 
-void setup()
-{
+void connectTask(void* pvParameters){ 
+  char str[10];
+  strcpy(str, ".");
+  for (;;) {
+    displayTextOnPanel(str, strlen(str), dataArray.Color(10, 0, 0), dataArray);
+    strcat(str, ".");
+    if (strlen(str) > 5) {
+      strcpy(str, ".");
+      dataArray.clear();
+    }
+    vTaskDelay(1000);
+  }
+}
+
+void setup(){
   Serial.begin(115200);
   Serial.println(xPortGetCoreID());
 
@@ -224,6 +245,10 @@ void setup()
   if (queue == NULL) {
     Serial.println("Error creating the queue");
   }
+
+  Serial.println("Configuring WDT...");
+  esp_task_wdt_init(WDT_TIMEOUT, true); //enable panic so ESP32 restarts
+  esp_task_wdt_add(NULL); //add current thread to WDT watch
 
   // pinMode(DATA_PIN, OUTPUT);
 
@@ -237,10 +262,26 @@ void setup()
   transport.setWifiPass(WIFI_PASSWORD);
   transport.setNtpServer(NTP_SERVER);
   transport.setDebug(Serial);  // Remove this line to disable debug logging of the client.
+
+  dataArray.clear();
+  TaskHandle_t connectTaskHandle;
+  xTaskCreate(connectTask, "ConnectTask", 1000, NULL, 2, &connectTaskHandle);
+
   if (!transport.begin()) {
     Serial.println(transport.errmsg);
     while (true) {};
   }
+
+  vTaskDelete(connectTaskHandle);
+
+  if (!MDNS.begin("esp32matrix")) {
+    Serial.println("Error setting up MDNS responder!");
+    while(1) {
+        delay(1000);
+    }
+  }
+  Serial.println("mDNS responder started");
+  MDNS.addService("http", "tcp", 80);
 
   // Configure the client
   client.setUrl(GC_URL);
@@ -303,6 +344,9 @@ void setup()
   blue = preferences.getUChar("blue", 10);
   Serial.print("Loaded blue value from preferences: ");
   Serial.println(blue);
+  precision = preferences.getUChar("precision", 1);
+  Serial.print("Loaded precision value from preferences: ");
+  Serial.println(precision);
 
   error[0] = '\0';
 
@@ -395,6 +439,13 @@ void setup()
       Serial.print("Set unit to: ");
       Serial.println(unit);
     }
+    if (request->hasParam("precision", true)) {
+      AsyncWebParameter* p = request->getParam("precision", true);
+      precision = p->value().toInt();
+      preferences.putUChar("precision", precision);
+      Serial.print("Set precision to: ");
+      Serial.println(precision);
+    }
     request->redirect("/");
     });
   server.begin();
@@ -417,8 +468,11 @@ void setup()
 
 }
 
+uint8_t errorCnt = 0;
+
 void loop()
 {
+  esp_task_wdt_reset();
   if (query[0] == '\0') {
     Serial.println("No query set, skipping");
     vTaskDelay(5000);
@@ -431,25 +485,31 @@ void loop()
     Serial.println(client.errmsg);
     strcpy(error, client.errmsg);
     vTaskDelay(5000);
+    errorCnt++;
+    if (errorCnt > 5) {
+      ESP.restart();
+    }
     return;
   }
   else {
     error[0] = '\0';
+    errorCnt = 0;
   }
   dataArray.clear();
   double newVal = querySeries.getSample(0)->val;
-  char newValStr[20];
-  dtostrf(newVal, 0, 2, newValStr);
+  // This needs to be big enough to hold the value + unit + null terminator
+  // Value is based on the number + the precision, hard to pin down so
+  // picking a reasonably large number
+  char newValStr[30];
+
+  dtostrf(newVal, 0, precision, newValStr);
   Serial.println(newValStr);
 
   if (strlen(unit) > 0) {
-    byte lastChar = strlen(newValStr) - 1;
-    if (newValStr[lastChar] == '0') {
-      newValStr[lastChar] = ' ';
-    }
     strcat(newValStr, unit);
   }
 
   displayTextOnPanel(newValStr, strlen(newValStr), dataArray.Color(red, green, blue), dataArray);
+
   vTaskDelay(5000);
 }
