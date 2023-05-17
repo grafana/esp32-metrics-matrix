@@ -42,7 +42,7 @@ AsyncWebServer server(80);
 WriteRequest writeRequest(1, 4096);
 TimeSeries ts = TimeSeries(1, 20, 20, 100, 5);
 
-ReadRequest readRequest(1, 2048);
+ReadRequest readRequest(1, 4096);
 TimeSeries querySeries = TimeSeries(1, 20, 20, 50, 5);
 
 QueueHandle_t queue;
